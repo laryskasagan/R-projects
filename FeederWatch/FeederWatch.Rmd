@@ -1,0 +1,517 @@
+---
+title: "R Notebook"
+---
+I chose dataset 3 - Bird FeederWatch data
+
+```{r}
+libs <- c("tidyverse", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer")
+
+installed_libs <- libs %in% rownames(installed.packages())
+
+if(any(installed_libs == F)) {
+  install.packages(libs[!installed_libs])
+} else{
+  print("All the libraries already installed")
+}
+```
+
+```{r}
+library(tidyverse)
+library(maps)
+library(Amelia)
+library(ggrepel)
+library(usmap)
+library(RColorBrewer)
+```
+
+The data comes from the Project FeederWatch.
+
+```{r}
+feederwatch <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_2021_public.csv')
+site_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_count_site_data_public_2021.csv')
+```
+## Quick peek on data
+
+```{r}
+head(feederwatch)
+head(site_data)
+
+str(feederwatch)
+
+glimpse(feederwatch)
+```
+
+## Data preparation -> feederwatch
+
+I dropped 5 columns that I decided weren't provided significant information. Then I explored how much missing data I have in that dataset. I genereted plot showing where missingness occurs in the dataset. I found that in that dataset I had only 1% of missing data NA - in 1 column which was snow_dep_atleast. I decided to replace NA value with calculated median value for each region.
+
+```{r}
+feederwatch <- feederwatch %>% 
+  select(-entry_technique,-PROJ_PERIOD_ID,-Data_Entry_Method,-sub_id,-obs_id)
+
+feederwatch %>% 
+  missmap(
+    main = "FeederWatch - Missing Map",
+    col = c("red","black")
+  )
+
+feederwatch %>% 
+  select(snow_dep_atleast) %>% 
+  table(useNA = "ifany")
+
+feederwatch %>% 
+  select(subnational1_code) %>% 
+  table()
+
+(median_by_region <- feederwatch %>%
+  group_by(subnational1_code) %>%
+  summarize(median_value = median(snow_dep_atleast, na.rm = TRUE)))
+
+feederwatch <- feederwatch %>% 
+  mutate(snow_dep_atleast = ifelse(is.na(snow_dep_atleast) & subnational1_code %in% median_by_region$subnational1_code,median_by_region$median_value[match(subnational1_code, median_by_region$subnational1_code)],snow_dep_atleast)) %>% 
+  mutate(Date = as.Date(paste(Year,Month,Day,sep = "-"))) %>% 
+  select(-Year,-Month,-Day)
+
+
+feederwatch %>% 
+  select(snow_dep_atleast) %>% 
+  table(useNA = "ifany")
+```
+  
+```{r}
+region_data <- data.frame(
+  subnational1_code = c("US-KY", "US-LA", "US-MA", "US-MD", "US-ME", "US-MI", "US-MN", "US-MO", "US-MS", "US-MT"),
+  state = c("Kentucky", "Louisiana", "Massachusetts", "Maryland", "Maine", "Michigan", "Minnesota", "Missouri", "Mississippi", "Montana"),
+  median_value = c(0.0000, 0.0000, 0.0000, 0.0000, 0.0010, 0.0010, 0.0010, 0.0000, 0.0000, 0.0010)
+)
+
+snow_depth_plot <- plot_usmap(data = region_data, values = "median_value", color = "white") +
+  scale_fill_gradient(low = "white", high = "blue", na.value = "gray", guide = "legend") +
+  labs(title = "Median Snow Depth by Region") +
+  theme(legend.position = "right")
+
+snow_depth_plot
+
+```
+  
+  
+```{r}
+head(site_data)
+
+str(site_data)
+
+glimpse(site_data)
+```
+
+## Data preparation - side_data
+
+For starters, I've decided to generete missing plot. In this dataset I've found 26% of missingness! Most of them are in columns describing numfeeders but there are missingness everywhere except loc_id. I divided this dataset into smaller with specific information. I've changed NA on 0 in animals activity set.
+
+```{r}
+site_data %>% 
+  missmap(
+    main = "Site data - Missing Map",
+    col = c("red","black")
+  )
+
+site_data <- site_data %>% 
+  mutate(year = str_extract(proj_period_id, "\\d+"))
+
+str(site_data$year)
+head(site_data)
+
+months_years_data <- site_data %>% 
+  select(loc_id,year,fed_in_jan,fed_in_feb,fed_in_mar,fed_in_apr,fed_in_may,fed_in_jun,fed_in_jul,fed_in_aug,fed_in_sep,fed_in_oct,fed_in_nov,fed_in_dec)
+  
+head(months_years_data)
+
+months_years_data %>% 
+  missmap(
+    main = "Months by year - Missing Map",
+    col = c("orange","black")
+  )
+
+animals_activity_data <- site_data %>% 
+  select(loc_id,year,nearby_feeders,squirrels,cats,dogs,humans)
+
+animals_activity_data %>% 
+  missmap(
+    main = "Animal activity - Missing Map",
+    col = c("yellow","black")
+  )
+
+head(animals_activity_data)
+
+animals_activity_data %>% 
+  select(squirrels) %>% 
+  table(useNA = 'ifany')
+
+site_data <- site_data %>% 
+  mutate(nearby_feeders = replace_na(nearby_feeders, 0),
+         squirrels = replace_na(squirrels, 0),
+         cats = replace_na(cats, 0),
+         dogs = replace_na(dogs, 0),
+         humans = replace_na(humans, 0)) 
+
+animals_activity_data <- animals_activity_data %>% 
+  mutate(nearby_feeders = replace_na(nearby_feeders, 0),
+         squirrels = replace_na(squirrels, 0),
+         cats = replace_na(cats, 0),
+         dogs = replace_na(dogs, 0),
+         humans = replace_na(humans, 0)) 
+
+animals_activity_data %>% 
+  missmap(
+    main = "Animal activity - Missing Map",
+    col = c("yellow","black")
+  )
+
+animals_activity_data %>% 
+  select(humans) %>% 
+  table(useNA = 'ifany')
+
+animals_activity_data %>%
+  group_by(squirrels) %>%
+  summarise(nearby_feeders = mean(nearby_feeders, na.rm = TRUE))
+
+animals_activity_data %>%
+  group_by(cats) %>%
+  summarise(nearby_feeders = mean(nearby_feeders, na.rm = TRUE))
+
+animals_activity_data %>%
+  group_by(dogs) %>%
+  summarise(nearby_feeders = mean(nearby_feeders, na.rm = TRUE))
+
+animals_activity_data %>%
+  group_by(humans) %>%
+  summarise(nearby_feeders = mean(nearby_feeders, na.rm = TRUE))
+
+site_data <- site_data %>% 
+  mutate(Year = str_extract(proj_period_id, "\\d+"))
+```
+I have a dataset named `animals_activity_data` which contains information about animals and nearby feeders - 1 means presence and 0 means  absence of specific animal. 
+Based of obtained result, it appears that presence of squirrels is more common than their absence. Similarly, presence of cats, dogs and human is more common than their absence.
+
+The code and results only provide information about the average number of nearby feeders for different groups of squirrels, cats, dogs and humans. It doesn't provide information about the frequency or distribution of the presence or absence of these animals in the dataset. So I decided to look up for these parameters.
+
+```{r}
+squirrel_counts <- table(animals_activity_data$squirrels)
+cat_counts <- table(animals_activity_data$cats)
+
+animals_activity_data <- animals_activity_data %>% 
+  mutate(presence_squirrels = ifelse(squirrels == 1, "Presence", "Absence"),
+         presence_cats = ifelse(cats == 1, "Presence", "Absence"),
+         presence_dogs = ifelse(dogs == 1, "Presence", "Absence"),
+         presence_humans = ifelse(humans == 1, "Presence", "Absence")) 
+
+combined_data <- rbind(
+  data.frame(animals = "Squirrels", presence = animals_activity_data$presence_squirrels),
+  data.frame(animals = "Cats", presence = animals_activity_data$presence_cats),
+  data.frame(animals = "Dogs", presence = animals_activity_data$presence_dogs),
+  data.frame(animals = "Humans", presence = animals_activity_data$presence_humans)
+)
+
+my_palette <- brewer.pal(4, "Pastel1")
+
+combined_data %>% ggplot(aes(x = presence, fill = animals)) +
+  geom_bar(position = "dodge", color = "black", stat = "count") +
+  labs(title = "Presence or absence of animals in the dataset",
+       x = "Presence or Absence", 
+       y = "Count") +
+  scale_fill_manual(values = my_palette)
+
+# Count the occurrences of squirrels and cats in the dataset:
+squirrel_count <- sum(animals_activity_data$squirrels == 1, na.rm = TRUE)
+cat_count <- sum(animals_activity_data$cats == 1, na.rm = TRUE)
+dog_count <- sum(animals_activity_data$dogs == 1, na.rm = TRUE)
+human_count <- sum(animals_activity_data$humans == 1, na.rm = TRUE)
+
+#Calculate the total number of records in the dataset:
+total_records <- animals_activity_data %>% 
+  nrow(.)
+
+#Calculate the proportion of records where animals are present:
+squirrel_presence_proportion <- squirrel_count / total_records
+cat_presence_proportion <- cat_count / total_records
+dog_presence_proportion <- dog_count / total_records
+human_presence_proportion <- human_count / total_records
+
+print(c(squirrel_presence_proportion, cat_presence_proportion, dog_presence_proportion, human_presence_proportion))
+```
+Interpretation of obteined result:
+
+1. The proportion of records where squirrels are present (0.7484107) is relatively high, indicating that squirrels are frequently observed in the dataset. This suggests that squirrels are the most common among the animals in the dataset. 
+
+2. The proportion of records where cats are present (0.4731379) indicates that cats are present in less than half of the records. This suggest that presence of cats is relatively less common compered to presence of squirrels.
+
+3. The proportion of records where dogs are present (0.4629514) is relatively low - the lowest value. This suggest that dogs are the least observed compared to other animals
+
+4. The proportion of records where humans are present (0.7287649) is relatively high, indicating that humans are frequently observed in the dataset. This suggest that humans are a common presence among the animals, potentially indicating their involvement in observation or it can have connection with habitat with high urbanization. 
+
+
+```{r}
+species_counts <- feederwatch %>% 
+  group_by(Week = format(Date,"%Y-%U"),species_code) %>% 
+  summarise(total_population = sum(how_many)) %>% 
+  arrange(desc(total_population))
+  
+top_species <- species_counts %>% 
+  group_by(species_code) %>%
+  summarise(total_population = sum(total_population)) %>%
+  top_n(5, total_population) %>% 
+  ungroup()
+  
+species_counts <- species_counts %>% 
+  filter(species_code %in% top_species$species_code)
+
+species_counts$Week <- as.Date(paste0(substr(species_counts$Week, 1, 4), "-W", substr(species_counts$Week, 6, 7), "-1"), format = "%Y-W%U-%u")
+
+species_labels <- c("daejun" = "Daejun magpie",
+                    "houspa" = "House Sparrow",
+                    "moudov" = "Mourning Dove",
+                    "amegfi" = "American Goldfinch",
+                    "houfin" = "House Finch ")
+
+species_colors <- c("daejun" = "red",
+                    "houspa" = "blue",
+                    "moudov" = "green",
+                    "amegfi" = "yellow",
+                    "houfin" = "pink ")
+
+species_counts_Nov_to_Apr_plot <- species_counts %>% 
+  ggplot(aes(x = Week, y = total_population, color = species_code, group = species_code)) +
+  geom_line() +
+  labs(title = "The 5 largest in number bird's population",
+       subtitle = "Weekly observation from 13th November to 30th April",
+       x = "", 
+       y = "Total Population",
+       color = "Species") +
+  scale_color_manual(values = species_colors, labels = species_labels) +
+  scale_x_date(breaks = "2 weeks", date_labels = "%Y-%m-%d") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+species_counts_Nov_to_Apr_plot
+```
+
+
+ 
+```{r}
+map_plot <- feederwatch %>% 
+  ggplot(aes(x =longitude, y = latitude)) +
+  borders("world") +
+  geom_point(size = 0.5) +
+  labs(title = "Map plot for observations", x = "Longitude", y = "Latitude")
+
+map_plot
+```
+
+```{r}
+north_america_data <- feederwatch %>% 
+  filter(grepl("US|CA", subnational1_code))
+
+north_america_plot <- north_america_data %>% 
+  ggplot(aes(x = longitude, y = latitude)) +
+  borders("world",fill = "black", colour = "black",xlim = c(-300, -60), ylim = c(20, 50)) +
+  geom_point(colour="red",size = 0.5) +
+  labs(title = "North America Map plot for observations", 
+       x = "Longitude", 
+       y = "Latitude")
+
+north_america_plot
+```
+
+```{r}
+usa_data <- feederwatch %>% 
+  filter(grepl("US", subnational1_code) & !grepl("US-HI|US-AK", subnational1_code))
+
+usa_plot <- usa_data %>% 
+  ggplot(aes(x = longitude, y = latitude)) +
+  borders("usa",fill = "black", colour = "black",xlim = c(-300, -60), ylim = c(20, 50)) +
+  geom_point(colour="red",size = 0.5) +
+  labs(title = "USA Map plot for observations",
+       subtitle = "without Alaska and Hawaii",
+       x = "Longitude", 
+       y = "Latitude")
+
+usa_plot
+```
+
+
+```{r}
+area_data_tree_shrubs <- site_data %>% 
+  select(year,evgr_trees_atleast, evgr_shrbs_atleast, dcid_trees_atleast, dcid_shrbs_atleast, fru_trees_atleast, cacti_atleast) %>% 
+  group_by(year)
+
+area_data_tree_shrubs %>% 
+  missmap(
+    main = "Minimum number of trees or shrubs in the count area",
+    col = c("orange","black")
+  )
+
+area_data_tree_shrubs <- area_data_tree_shrubs  %>% 
+  filter_all(all_vars(!is.na(.)))
+# filter(complete.cases(.))  <- dlaczego przestało działać?
+
+area_data_tree_shrubs
+
+sum_per_year <- area_data_tree_shrubs %>% 
+  group_by(year) %>% 
+  summarize(total_evergreen_trees = sum(evgr_trees_atleast),
+            total_evergreen_shrubs = sum(evgr_shrbs_atleast),
+            total_deciduous_trees = sum(dcid_trees_atleast),
+            total_deciduous_shrubs = sum(dcid_shrbs_atleast),
+            total_fruit_trees = sum(fru_trees_atleast),
+            total_cacti = sum(cacti_atleast))
+```
+
+
+```{r}
+plant_labels <- c("total_evergreen_trees" = "Evergreen trees",
+                    "total_evergreen_shrubs" = "Evergreen shrubs",
+                    "total_deciduous_trees" = "Deciduous trees",
+                    "total_deciduous_shrubs" = "Deciduous shrubs",
+                    "total_fruit_trees" = "Fruit trees",
+                    "total_cacti" = "Cacti")
+
+plant_colors <- c("total_evergreen_trees" = "hotpink1",
+                  "total_evergreen_shrubs" = "mediumorchid1",
+                  "total_deciduous_trees" = "lightsalmon",
+                  "total_deciduous_shrubs" = "lightpink3",
+                  "total_fruit_trees" = "lightpink4",
+                  "total_cacti" = "palevioletred4")
+
+pie_chart <- list() #why? wcześniej działało bez tego?
+
+for (i in 1:nrow(sum_per_year)) {
+  year_data <- sum_per_year[i, ]
+  
+  pie_data <- data.frame(
+    category = names(year_data)[-1], 
+    value = unlist(year_data[-1]))
+  
+  pie_chart[[i]] <- pie_data %>% 
+    ggplot(aes(x = "", y = value, fill = category)) +
+    geom_col(width = 1, color = 1) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar(theta = "y") +
+    labs(x = "",
+         y = "",
+         title = "Total of minimum number of trees or shrubs in the count area",
+         subtitle = paste("Pie chart for year", year_data$year),
+         fill = "Type of trees or shrubs") +
+    scale_fill_manual(values = plant_colors, labels = plant_labels) +
+    theme_void()
+}
+
+pie_chart[1]
+pie_chart[11]
+pie_chart[28]
+```
+
+
+```{r}
+habitat_data <- site_data %>%
+  select(year,hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_water_fresh,hab_water_salt,hab_residential,hab_industrial,hab_agricultural,hab_desert_scrub,hab_young_woods,hab_swamp,hab_marsh)
+
+habitat_data %>% 
+  missmap(
+    main = "Habitat area - Missing Map",
+    col = c("green","black")
+  )
+
+habitat_data <- habitat_data %>% 
+  filter(complete.cases(.))
+
+sum_hab_per_year <- habitat_data %>% 
+  group_by(year) %>% 
+  summarize(total_hab_dcid_woods = sum(hab_dcid_woods),
+            total_hab_evgr_woods = sum(hab_evgr_woods),
+            total_hab_mixed_woods = sum(hab_mixed_woods),
+            total_hab_orchard = sum(hab_orchard),
+            total_hab_park = sum(hab_park),
+            total_hab_water_fresh = sum(hab_water_fresh),
+            total_hab_water_salt = sum(hab_water_salt),
+            total_hab_residential = sum(hab_residential),
+            total_hab_industrial = sum(hab_industrial),
+            total_hab_agricultural = sum(hab_agricultural),
+            total_hab_desert_scrub = sum(hab_desert_scrub),
+            total_hab_young_woods = sum(hab_young_woods),
+            total_hab_swamp = sum(hab_swamp),
+            total_hab_marsh = sum(hab_marsh))
+```
+
+
+```{r}
+habitat_labels <- c("hab_dcid_woods" = "decidious woods",
+                    "hab_evgr_woods" = "evergreen woods",
+                    "hab_mixed_woods" = "mixed woods",
+                    "hab_orchard" = "orchard",
+                    "hab_park" = "park",
+                    "hab_water_fresh" = "fresh water",
+                    "hab_water_salt" = "salt water",
+                    "hab_residential" = "residential",
+                    "hab_industrial" = "industrial",
+                    "hab_agricultural" = "agricultural",
+                    "hab_desert_scrub" = "desert scrub",
+                    "hab_young_woods" = "young woods",
+                    "hab_swamp" = "swamp",
+                    "hab_marsh" = "marsh")
+
+bar_plot <- list()
+
+for(i in 1:nrow(sum_hab_per_year)) {
+  
+  year_data <- sum_hab_per_year[i, ]
+  
+  bar_data <- data.frame(
+    habitat = names(year_data)[-1],
+    value = unlist(year_data[-1])
+  )
+  
+ bar_plot[[i]] <- bar_data %>% 
+   ggplot(aes(x = habitat, y = value)) +
+    geom_bar(stat = "identity", fill = "orchid3") + 
+    labs(
+      title = "Total of habitat type",
+      subtitle = paste("Bar plot for year", year_data$year),
+      x = "Habitat",
+      y = "Total"
+    ) +
+   scale_x_discrete(labels = habitat_labels) + #jak zrobic custom labels??????
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+   
+}
+
+bar_plot[1]
+bar_plot[15]
+bar_plot[22]
+```
+
+
+```{r}
+selected_species_code <- "pingro"#readline(prompt = "For what species do you want see plot?")
+
+species_data <- feederwatch %>% 
+  filter(species_code == selected_species_code) %>% 
+  filter(grepl("US", subnational1_code) & !grepl("US-HI|US-AK", subnational1_code)) %>% 
+  select(species_code,subnational1_code,how_many) %>% 
+  group_by(subnational1_code) %>% 
+  summarize(total_observation = sum(how_many))
+
+values <- pull(species_data, total_observation)
+
+state_density_plot <- plot_usmap(values = values, color = "orange", labels=FALSE) +
+  scale_fill_continuous( low = "white", high = "orange", 
+                         name = "Popularity") + 
+  labs(title = "U.S. States",
+       subtitle = paste("This is a density of observation for", selected_species_code)) + 
+  theme(legend.position = "right") + 
+  theme(panel.background = element_rect(colour = "black"))
+
+state_density_plot
+```
+
+```{r}
+head (feederwatch)
+```
+
