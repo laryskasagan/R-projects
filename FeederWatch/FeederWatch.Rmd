@@ -3,7 +3,7 @@ title: "R Notebook - Bird FeederWatch dataset"
 ---
 
 ```{r}
-libs <- c("tidyverse", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer")
+libs <- c("tidyverse","dplyr", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer")
 
 installed_libs <- libs %in% rownames(installed.packages())
 
@@ -16,6 +16,7 @@ if(any(installed_libs == F)) {
 
 ```{r}
 library(tidyverse)
+library(dplyr)
 library(maps)
 library(Amelia)
 library(ggrepel)
@@ -78,14 +79,21 @@ feederwatch %>%
 ```
   
 ```{r}
-region_data <- data.frame(
-  subnational1_code = c("US-KY", "US-LA", "US-MA", "US-MD", "US-ME", "US-MI", "US-MN", "US-MO", "US-MS", "US-MT"),
-  state = c("Kentucky", "Louisiana", "Massachusetts", "Maryland", "Maine", "Michigan", "Minnesota", "Missouri", "Mississippi", "Montana"),
-  median_value = c(0.0000, 0.0000, 0.0000, 0.0000, 0.0010, 0.0010, 0.0010, 0.0000, 0.0000, 0.0010)
-)
+region_dataset_USA <- feederwatch %>% 
+  select(subnational1_code,snow_dep_atleast) %>% 
+  filter(grepl("US", subnational1_code)) %>% 
+  mutate(state_abb = substring(subnational1_code, 4)) %>%
+  select(-subnational1_code) %>% 
+  mutate(state = state.name[match(state_abb, state.abb)]) %>%
+  select(-state_abb) %>% 
+  group_by(state) %>% 
+  summarise(mean_snow_dep = mean(snow_dep_atleast))
 
-snow_depth_plot <- plot_usmap(data = region_data, values = "median_value", color = "white") +
-  scale_fill_gradient(low = "white", high = "blue", na.value = "gray", guide = "legend") +
+head(region_dataset_USA)
+
+
+snow_depth_plot <- plot_usmap(data = region_dataset_USA, values = "mean_snow_dep", color = "grey") +
+  scale_fill_gradient(low = "white", high = "violet", na.value = "gray", guide = "legend") +
   labs(title = "Median Snow Depth by Region") +
   theme(legend.position = "right")
 
