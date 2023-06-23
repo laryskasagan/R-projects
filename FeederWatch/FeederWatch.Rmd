@@ -1,7 +1,6 @@
 ---
-title: "R Notebook"
+title: "R Notebook - Bird FeederWatch dataset"
 ---
-I chose dataset 3 - Bird FeederWatch data
 
 ```{r}
 libs <- c("tidyverse", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer")
