@@ -89,18 +89,27 @@ region_dataset_USA <- feederwatch %>%
   group_by(state) %>% 
   summarise(mean_snow_dep = mean(snow_dep_atleast))
 
-head(region_dataset_USA)
+states <- c(state.name, "District of Columbia")
+states 
 
+missing_states <- setdiff(states, region_dataset_USA$state)
 
-snow_depth_plot <- plot_usmap(data = region_dataset_USA, values = "mean_snow_dep", color = "grey") +
+region_dataset_USA <- region_dataset_USA %>% 
+  mutate(state = ifelse(is.na(state),"District of Columbia",state))
+
+snow_depth_plot <- region_dataset_USA %>% 
+  plot_usmap(data = ., values = "mean_snow_dep", color = "grey") +
   scale_fill_gradient(low = "white", high = "violet", na.value = "gray", guide = "legend") +
-  labs(title = "Median Snow Depth by Region") +
+  labs(title = "Median Snow Depth by Region",
+       subtitle = "in US states") +
   theme(legend.position = "right")
 
 snow_depth_plot
 
 ```
-  
+In this case I could have replaced the NA value in dataset region_dataset_USA as it was the only one missing a value. Knowing that there are 51 states in the USA I could have compared and easily found the missing state - this would be impossible in case there were 2 or more missing values.
+
+Like we could expect 
   
 ```{r}
 head(site_data)
