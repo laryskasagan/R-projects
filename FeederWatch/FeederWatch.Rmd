@@ -107,9 +107,44 @@ snow_depth_plot <- region_dataset_USA %>%
 snow_depth_plot
 
 ```
+
 In this case I could have replaced the NA value in dataset region_dataset_USA as it was the only one missing a value. Knowing that there are 51 states in the USA I could have compared and easily found the missing state - this would be impossible in case there were 2 or more missing values.
 
-Like we could expect 
+Like we could expect value of mean minimum snow depth which had been estimated by participant, was the highest in Alaska. This is the most northerly state in the USA so it is logical assumption, which is confirmed by above plot. In the southern states value of mean minimum snow depth is close to the zero, and increase with latitude. This subset of dataset comes from year 2021. So I have been decided to compare date from other years to check the difference in snowfall between these years*.
+
+```{r}
+feederwatch_1988_1995 <- readr::read_csv('https://clo-pfw-prod.s3-us-west-2.amazonaws.com/data/PFW_1988_1995_public.csv')
+
+head(feederwatch_1988_1995)
+
+feederwatch_1988_1995 %>% 
+  select(SNOW_DEP_ATLEAST) %>% 
+  table(useNA = "ifany")
+
+median_by_region_1988 <- feederwatch_1988_1995 %>%
+  filter(Year == 1988) %>% 
+  group_by(SUBNATIONAL1_CODE) %>%
+  summarize(median_value = median(SNOW_DEP_ATLEAST, na.rm = TRUE))
+
+feederwatch_1988 <- feederwatch_1988_1995 %>% 
+  select(SNOW_DEP_ATLEAST,SUBNATIONAL1_CODE,Year) %>% 
+  mutate(SNOW_DEP_ATLEAST = ifelse(is.na(SNOW_DEP_ATLEAST) & SUBNATIONAL1_CODE %in% median_by_region_1988$SUBNATIONAL1_CODE,median_by_region_1988$median_value[match(SUBNATIONAL1_CODE,median_by_region_1988_1995$SUBNATIONAL1_CODE)],SNOW_DEP_ATLEAST)) 
+
+region_dataset_USA_1988 <- feederwatch_1988 %>% 
+  select(SUBNATIONAL1_CODE,SNOW_DEP_ATLEAST) %>% 
+  filter(grepl("US", SUBNATIONAL1_CODE)) %>% 
+  mutate(state_abb = substring(SUBNATIONAL1_CODE,4)) %>% 
+  mutate(state = state.name[match(state_abb,state.abb)]) %>% 
+  select(-SUBNATIONAL1_CODE,-state_abb) %>% 
+  group_by(state) %>% 
+  summarise(mean_snow_dep = mean(SNOW_DEP_ATLEAST))
+  
+
+```
+
+I have been decided to replace NA value for that dataset with median for group
+
+*Data available through 1988 is available for download on FeederWatch Raw Dataset Downloads page.
   
 ```{r}
 head(site_data)
@@ -254,6 +289,7 @@ human_presence_proportion <- human_count / total_records
 
 print(c(squirrel_presence_proportion, cat_presence_proportion, dog_presence_proportion, human_presence_proportion))
 ```
+
 Interpretation of obteined result:
 
 1. The proportion of records where squirrels are present (0.7484107) is relatively high, indicating that squirrels are frequently observed in the dataset. This suggests that squirrels are the most common among the animals in the dataset. 
