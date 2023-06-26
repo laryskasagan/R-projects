@@ -77,7 +77,9 @@ feederwatch %>%
   select(snow_dep_atleast) %>% 
   table(useNA = "ifany")
 ```
-  
+
+At chunk below I've prepered data to 
+
 ```{r}
 region_dataset_USA <- feederwatch %>% 
   select(subnational1_code,snow_dep_atleast) %>% 
@@ -97,18 +99,21 @@ missing_states <- setdiff(states, region_dataset_USA$state)
 region_dataset_USA <- region_dataset_USA %>% 
   mutate(state = ifelse(is.na(state),"District of Columbia",state))
 
-snow_depth_plot <- region_dataset_USA %>% 
-  plot_usmap(data = ., values = "mean_snow_dep", color = "grey") +
+genereting_of_snow_depth_plot_USA <- function(input_data,year) {
+  plot_usmap(data = input_data, values = "mean_snow_dep", color = "grey") +
   scale_fill_gradient(low = "white", high = "violet", na.value = "gray", guide = "legend") +
   labs(title = "Median Snow Depth by Region",
-       subtitle = "in US states") +
+       subtitle = paste("in the USA states for year",year)) +
   theme(legend.position = "right")
+}
+  
+snow_depth_plot <- genereting_of_snow_depth_plot_USA(region_dataset_USA,2021)
 
 snow_depth_plot
 
 ```
 
-In this case I could have replaced the NA value in dataset region_dataset_USA as it was the only one missing a value. Knowing that there are 51 states in the USA I could have compared and easily found the missing state - this would be impossible in case there were 2 or more missing values.
+In this case I could have replaced the NA value in dataset `region_dataset_USA` as it was the only one missing a value. Knowing that there are 50 states (+ 1 federal district) in the USA I could have compared and easily found the missing state - this would be impossible in case there were 2 or more missing values.
 
 Like we could expect value of mean minimum snow depth which had been estimated by participant, was the highest in Alaska. This is the most northerly state in the USA so it is logical assumption, which is confirmed by above plot. In the southern states value of mean minimum snow depth is close to the zero, and increase with latitude. This subset of dataset comes from year 2021. So I have been decided to compare date from other years to check the difference in snowfall between these years*.
 
@@ -127,6 +132,7 @@ median_by_region_1988 <- feederwatch_1988_1995 %>%
   summarize(median_value = median(SNOW_DEP_ATLEAST, na.rm = TRUE))
 
 feederwatch_1988 <- feederwatch_1988_1995 %>% 
+  filter(Year == 1988) %>% 
   select(SNOW_DEP_ATLEAST,SUBNATIONAL1_CODE,Year) %>% 
   mutate(SNOW_DEP_ATLEAST = ifelse(is.na(SNOW_DEP_ATLEAST) & SUBNATIONAL1_CODE %in% median_by_region_1988$SUBNATIONAL1_CODE,median_by_region_1988$median_value[match(SUBNATIONAL1_CODE,median_by_region_1988_1995$SUBNATIONAL1_CODE)],SNOW_DEP_ATLEAST)) 
 
@@ -139,13 +145,45 @@ region_dataset_USA_1988 <- feederwatch_1988 %>%
   group_by(state) %>% 
   summarise(mean_snow_dep = mean(SNOW_DEP_ATLEAST))
   
+missing_states <- setdiff(states,region_dataset_USA_1988$state)
 
+region_dataset_USA_1988 <- region_dataset_USA_1988 %>% 
+  mutate(state = ifelse(is.na(state),"Hawaii",state))
+```
+*Data available through 1988 is available for download on FeederWatch Raw Dataset Downloads page.
+
+I've decided to replace NA value in dataset for 1988 with median for group like I did for the primary dataset. I've started with the data for year 1988. I've cleaned the data in the same way I've cleaned the primary dataset. During that action I found difference between these datasets - primary dataset includes 51 states while the second dataset includes only 50 states. The reason for the difference stems from the fact that the first dataset includes federal district of Columbia while the second doesn't have it. Variable missing_states in this case is character vector with 2 elements - "Hawaii" and "District of Columbia". Previously I've replaced the NA value with District of Columbia but in this case I have decided to replace it Hawaii.
+
+For the purpose of comparison, I've decided to delete the row with federal District of Columbia in dataset `region_dataset_USA` and after that, compare results based on 50 states.
+
+```{r}
+region_dataset_USA <- subset(region_dataset_USA,region_dataset_USA$state != "District of Columbia")
+
+snow_depth_plot_to_compare_1988 <- genereting_of_snow_depth_plot_USA(region_dataset_USA_1988,1988)
+snow_depth_plot_to_compare_2021 <- genereting_of_snow_depth_plot_USA(region_dataset_USA,2021)
+
+snow_depth_plot_to_compare_1988
+snow_depth_plot_to_compare_2021
+```
+What is surprising, according to the generated plot in 1988 there were much more states with mean of snow depth equal 0 than in 2021. On the other hand, the highest value belongs to Alaska in both case but in 1988 this value was higher than in 2021.
+
+The interpretation of obtained result:
+
+1. Although FeederWatch creator's attempt to minimize errors, a small percentage of FeederWatch reports are incorrect and analysts must be aware that misidentifications, data entry errors, and other sources of error can evade their data validation system. It's logical assumption that in their early years of operating errors were more common. Over time, every organizations tend to evolve and improve their systems and processes based on lessons learned from past errors or inefficiencies. 
+
+2. Minimum snow depth was estimated by participants what can generated discrepancy with obtained results because participants may have different interpretations of what constitutes the minimum depth, leading to inconsistencies in their estimates. They might also used different methods or tools to measure snow depth. And last but not least, for the first years error might be caused by lack of standardization. Without clear guidelines or instructions on how to measure snow depth, participants might have different understandings of what measurement should be considered as the minimum. The absence of standardized procedures can result in inaccurate estimates.
+
+```{r}
+snow_dept_diffrences_between_years_1988_2021 <- region_dataset_USA_1988 %>% 
+  mutate(diff = ifelse(state %in% region_dataset_USA$state, (mean_snow_dep - region_dataset_USA$mean_snow_dep),NA)) %>% 
+  select(state,diff)
+
+snow_dept_diffrences_between_years_1988_2021 %>% filter(diff > 0)
+snow_dept_diffrences_between_years_1988_2021 %>% filter(diff <= 0)
 ```
 
-I have been decided to replace NA value for that dataset with median for group
+I've decided to compare result in tibble to see exact difference between these years. For 7 states difference was greater than 0 which means that in 1988 value of mean snow depth was higher than in 2021. For the rest - the value of mean snow depth was higher in 2021 than in 1988. 
 
-*Data available through 1988 is available for download on FeederWatch Raw Dataset Downloads page.
-  
 ```{r}
 head(site_data)
 
@@ -240,6 +278,7 @@ animals_activity_data %>%
 site_data <- site_data %>% 
   mutate(Year = str_extract(proj_period_id, "\\d+"))
 ```
+
 I have a dataset named `animals_activity_data` which contains information about animals and nearby feeders - 1 means presence and 0 means  absence of specific animal. 
 Based of obtained result, it appears that presence of squirrels is more common than their absence. Similarly, presence of cats, dogs and human is more common than their absence.
 
@@ -290,7 +329,7 @@ human_presence_proportion <- human_count / total_records
 print(c(squirrel_presence_proportion, cat_presence_proportion, dog_presence_proportion, human_presence_proportion))
 ```
 
-Interpretation of obteined result:
+The interpretation of obtained result:
 
 1. The proportion of records where squirrels are present (0.7484107) is relatively high, indicating that squirrels are frequently observed in the dataset. This suggests that squirrels are the most common among the animals in the dataset. 
 
