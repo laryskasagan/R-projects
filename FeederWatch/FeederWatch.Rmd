@@ -78,7 +78,7 @@ feederwatch %>%
   table(useNA = "ifany")
 ```
 
-At chunk below I've prepared data to generation plot. I've used `usmap` package in combination with `ggplot2` to generate the US map.
+At chunk below I've prepared data to generation plot. I've used `usmap` package in combination with `ggplot2` to generate the US map. On the generated plot, I've intended to show the depth of the snow cover depending on the state.
 
 ```{r}
 (region_dataset_USA <- feederwatch %>% 
@@ -194,7 +194,7 @@ glimpse(site_data)
 
 ## Data preparation - side_data
 
-For starters, I've decided to generete missing plot. In this dataset I've found 26% of missingness! Most of them are in columns describing numfeeders but there are missingness everywhere except loc_id. I divided this dataset into smaller with specific information. In dataset `animals_activity_data` there is only 8% of missingness.  I've changed NA on 0 in animals activity set.
+For starters, I've decided to generete missing plot. In this dataset I've found 26% of missingness! Most of them are in columns describing numfeeders but there are missingness everywhere except loc_id. I divided this dataset into smaller with specific information. In dataset `animals_activity_data` there is only 8% of missingness. I've changed NA on 0 in animals activity set.
 
 ```{r}
 site_data %>% 
@@ -303,7 +303,8 @@ combined_data <- rbind(
 
 my_palette <- brewer.pal(4, "Pastel1")
 
-combined_data %>% ggplot(aes(x = presence, fill = animals)) +
+present_absent_barplot <- combined_data %>% 
+  ggplot(aes(x = presence, fill = animals)) +
   geom_bar(position = "dodge", color = "black", stat = "count") +
   labs(title = "Presence or absence of animals in the dataset",
        x = "Presence or Absence", 
@@ -340,11 +341,18 @@ The interpretation of obtained result:
 4. The proportion of records where humans are present (0.7287649) is relatively high, indicating that humans are frequently observed in the dataset. This suggest that humans are a common presence among the animals, potentially indicating their involvement in observation or it can have connection with habitat with high urbanization. 
 
 
+At chunk below I've prepared data for plotting. I've intended to show how total of bird's population number changing through time in North America. 
+
 ```{r}
 species_counts <- feederwatch %>% 
   group_by(Week = format(Date,"%Y-%U"),species_code) %>% 
   summarise(total_population = sum(how_many)) %>% 
   arrange(desc(total_population))
+
+#Check the total number of species in dataset
+(species_counts %>% 
+  group_by(species_code) %>% 
+  summarise(total_population = sum(total_population)))
   
 top_species <- species_counts %>% 
   group_by(species_code) %>%
@@ -369,21 +377,35 @@ species_colors <- c("daejun" = "red",
                     "amegfi" = "yellow",
                     "houfin" = "pink ")
 
-species_counts_Nov_to_Apr_plot <- species_counts %>% 
-  ggplot(aes(x = Week, y = total_population, color = species_code, group = species_code)) +
-  geom_line() +
-  labs(title = "The 5 largest in number bird's population",
-       subtitle = "Weekly observation from 13th November to 30th April",
-       x = "", 
-       y = "Total Population",
-       color = "Species") +
-  scale_color_manual(values = species_colors, labels = species_labels) +
-  scale_x_date(breaks = "2 weeks", date_labels = "%Y-%m-%d") + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+generating_of_species_population_plot <- function(input_data,year,input_species_colors,input_species_labels) {
+  input_data %>%
+    ggplot(aes(x = Week, y = total_population, color = species_code, group = species_code)) +
+    geom_line() +
+    labs(title = "The 5 largest in number bird's population",
+         subtitle = paste("Weekly observation from 13th November to 30th April ", year),
+         x = "",
+         y = "Total population") +
+    scale_color_manual(values = input_species_colors, labels = input_species_labels) +
+    scale_x_date(breaks = "2 weeks", date_labels = "%Y-%m-%d") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+species_counts_Nov_to_Apr_plot <- generating_of_species_population_plot(species_counts,2021,species_colors,species_labels)
 
 species_counts_Nov_to_Apr_plot
 ```
 
+I've created line plot for 5 species of birds because dataset has data for 361 different species. It's a lot and any try to generate line plot for every species would make the line plot illegible. I've also decided that population calculation based on weekly observation would give the best result to show on line plot.
+I had to figure out breaks on x axis by trial and error and in my opinion 2 weeks breaks is the most readable. 
+
+As before, I've decided to compare data from 2021 with different year - in this case, I compared with 2001 to check differences.
+
+```{r}
+feederwatch_2001_2005 <- readr::read_csv("https://clo-pfw-prod.s3-us-west-2.amazonaws.com/data/PFW_2001_2005_public.csv")
+
+feederwatch_2001 <- feederwatch_2001_2005 %>% 
+  filter()
+```
 
  
 ```{r}
