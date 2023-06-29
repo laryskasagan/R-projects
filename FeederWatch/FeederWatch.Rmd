@@ -3,7 +3,7 @@ title: "R Notebook - Bird FeederWatch dataset"
 ---
 
 ```{r}
-libs <- c("tidyverse","dplyr", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer")
+libs <- c("tidyverse","dplyr", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer","tidymodels", "vip")
 
 installed_libs <- libs %in% rownames(installed.packages())
 
@@ -22,6 +22,8 @@ library(Amelia)
 library(ggrepel)
 library(usmap)
 library(RColorBrewer)
+library(tidymodels)
+library(vip)
 ```
 
 The data comes from the Project FeederWatch.
@@ -123,20 +125,21 @@ feederwatch_1988_1995 <- readr::read_csv('https://clo-pfw-prod.s3-us-west-2.amaz
 head(feederwatch_1988_1995)
 
 feederwatch_1988_1995 %>% 
+  filter(Year == 1989) %>% 
   select(SNOW_DEP_ATLEAST) %>% 
   table(useNA = "ifany")
 
-median_by_region_1988 <- feederwatch_1988_1995 %>%
-  filter(Year == 1988) %>% 
+median_by_region_1989 <- feederwatch_1988_1995 %>%
+  filter(Year == 1989) %>% 
   group_by(SUBNATIONAL1_CODE) %>%
   summarize(median_value = median(SNOW_DEP_ATLEAST, na.rm = TRUE))
 
-feederwatch_1988 <- feederwatch_1988_1995 %>% 
-  filter(Year == 1988) %>% 
+feederwatch_1989 <- feederwatch_1988_1995 %>% 
+  filter(Year == 1989) %>% 
   select(SNOW_DEP_ATLEAST,SUBNATIONAL1_CODE,Year) %>% 
-  mutate(SNOW_DEP_ATLEAST = ifelse(is.na(SNOW_DEP_ATLEAST) & SUBNATIONAL1_CODE %in% median_by_region_1988$SUBNATIONAL1_CODE,median_by_region_1988$median_value[match(SUBNATIONAL1_CODE,median_by_region_1988$SUBNATIONAL1_CODE)],SNOW_DEP_ATLEAST)) 
+  mutate(SNOW_DEP_ATLEAST = ifelse(is.na(SNOW_DEP_ATLEAST) & SUBNATIONAL1_CODE %in% median_by_region_1989$SUBNATIONAL1_CODE,median_by_region_1989$median_value[match(SUBNATIONAL1_CODE,median_by_region_1989$SUBNATIONAL1_CODE)],SNOW_DEP_ATLEAST)) 
 
-region_dataset_USA_1988 <- feederwatch_1988 %>% 
+region_dataset_USA_1989 <- feederwatch_1989 %>% 
   select(SUBNATIONAL1_CODE,SNOW_DEP_ATLEAST) %>% 
   filter(grepl("US", SUBNATIONAL1_CODE)) %>% 
   mutate(state_abb = substring(SUBNATIONAL1_CODE,4)) %>% 
@@ -145,27 +148,30 @@ region_dataset_USA_1988 <- feederwatch_1988 %>%
   group_by(state) %>% 
   summarise(mean_snow_dep = mean(SNOW_DEP_ATLEAST))
   
-missing_states <- setdiff(states,region_dataset_USA_1988$state)
+missing_states <- setdiff(states,region_dataset_USA_1989$state)
 
 region_dataset_USA_1988 <- region_dataset_USA_1988 %>% 
   mutate(state = ifelse(is.na(state),"Hawaii",state))
 ```
 *Data available through 1988 is available for download on FeederWatch Raw Dataset Downloads page.
 
-I've decided to replace NA value in dataset for 1988 with median for group like I did for the primary dataset. I've started with the data for year 1988. I've cleaned the data in the same way I've cleaned the primary dataset. During that action I found difference between these datasets - primary dataset includes 51 states while the second dataset includes only 50 states. The reason for the difference stems from the fact that the first dataset includes federal district of Columbia while the second doesn't have it. Variable missing_states in this case is character vector with 2 elements - "Hawaii" and "District of Columbia". Previously I've replaced the NA value with District of Columbia but in this case I have decided to replace it Hawaii.
+I've decided to replace NA value in dataset for 1988 with median for group like I did for the primary dataset. I've started with the data for year 1988 but there was a problem - I couldn't calculate median because in column `SNOW_DEP_ATLEAST` for 1988 were only NA! 
+It has occurred to me that in 1988 participants didn't have to estimate snow cover. It was better for 1989 because it was only 280611 records with NA value for snow depth.
+
+I've cleaned the data in the same way I've cleaned the primary dataset. During that action I found difference between these datasets - primary dataset includes 51 states while the second dataset includes only 50 states. The reason for the difference stems from the fact that the first dataset includes federal district of Columbia while the second doesn't have it. Variable missing_states in this case is character vector with 2 elements - "Hawaii" and "District of Columbia". Previously I've replaced the NA value with District of Columbia but in this case I have decided to replace it Hawaii.
 
 For the purpose of comparison, I've decided to delete the row with federal District of Columbia in dataset `region_dataset_USA` and after that, compare results based on 50 states.
 
 ```{r}
 region_dataset_USA <- subset(region_dataset_USA,region_dataset_USA$state != "District of Columbia")
 
-snow_depth_plot_to_compare_1988 <- genereting_of_snow_depth_plot_USA(region_dataset_USA_1988,1988)
+snow_depth_plot_to_compare_1989 <- genereting_of_snow_depth_plot_USA(region_dataset_USA_1988,1989)
 snow_depth_plot_to_compare_2021 <- genereting_of_snow_depth_plot_USA(region_dataset_USA,2021)
 
-snow_depth_plot_to_compare_1988
+snow_depth_plot_to_compare_1989
 snow_depth_plot_to_compare_2021
 ```
-What is surprising, according to the generated plot in 1988 there were much more states with mean of snow depth equal 0 than in 2021. On the other hand, the highest value belongs to Alaska in both case but in 1988 this value was higher than in 2021.
+What is surprising, according to the generated plot in 1989 there were much more states with mean of snow depth equal 0 than in 2021. On the other hand, the highest value belongs to Alaska in both case but in 1989 this value was higher than in 2021.
 
 The interpretation of obtained result:
 
@@ -174,21 +180,19 @@ The interpretation of obtained result:
 2. Minimum snow depth was estimated by participants. That can be the source of discrepancy with obtained results because participants may have different interpretations of what constitutes as minimum depth, leading to inconsistencies in their estimates. They might also used different methods or tools to measure snow depth. And last but not least, for the first years errors might be caused by lack of standardization. Without clear guidelines or instructions on how to measure snow depth, participants might have different understanding of what measurement should be considered as the minimum. The absence of standardized procedures can result in inaccurate estimates.
 
 ```{r}
-snow_dept_diffrences_between_years_1988_2021 <- region_dataset_USA_1988 %>% 
-  mutate(diff = ifelse(state %in% region_dataset_USA$state, (mean_snow_dep - region_dataset_USA$mean_snow_dep),NA)) %>% 
+snow_dept_diffrences_between_years_1989_2021 <- region_dataset_USA_1989 %>% 
+  mutate(diff = ifelse(region_dataset_USA$state %in% state,(mean_snow_dep - region_dataset_USA$mean_snow_dep),NA)) %>% 
   select(state,diff)
 
-snow_dept_diffrences_between_years_1988_2021 %>% filter(diff > 0)
-snow_dept_diffrences_between_years_1988_2021 %>% filter(diff <= 0)
+snow_dept_diffrences_between_years_1989_2021 %>% filter(diff > 0)
+snow_dept_diffrences_between_years_1989_2021 %>% filter(diff <= 0)
 ```
 
-I've decided to compare result in tibble to see the exact difference between these years. In 7 states the difference was greater than 0 which means that in 1988 value of mean snow depth was higher than in 2021. For the rest - the value of mean snow depth was higher in 2021 than in 1988.
+I've decided to compare result in tibble to see the exact difference between these years. In 14 states the difference was greater than 0 which means that in 1989 value of mean snow depth was higher than in 2021. For the rest - the value of mean snow depth was higher in 2021 than in 1989.
 
 ```{r}
 head(site_data)
-
 str(site_data)
-
 glimpse(site_data)
 ```
 
@@ -398,15 +402,15 @@ species_counts_Nov_to_Apr_plot
 I've created line plot for 5 species of birds because dataset has data for 361 different species. It's a lot and any try to generate line plot for every species would make the line plot illegible. I've also decided that population calculation based on weekly observation would give the best result to show on line plot.
 I had to figure out breaks on x axis by trial and error and in my opinion 2 weeks breaks is the most readable. 
 
-As before, I've decided to compare data from 2021 with different year - in this case, I compared with 2001 to check differences.
+As before, I've decided to compare data from 2021 with different year - in this case, I compared with 2011 to check differences.
 
 ```{r}
-feederwatch_2001_2005 <- readr::read_csv("https://clo-pfw-prod.s3-us-west-2.amazonaws.com/data/PFW_2001_2005_public.csv")
+feederwatch_2001_2005 <- readr::read_csv('https://clo-pfw-prod.s3-us-west-2.amazonaws.com/data/PFW_2011_2015_public.csv')
 
-feederwatch_2001 <- feederwatch_2001_2005 %>% 
+feederwatch_2011 <- feederwatch_2011_2015 %>% 
   filter()
 ```
-
+I've chosen data for 2011.
  
 ```{r}
 map_plot <- feederwatch %>% 
@@ -624,7 +628,59 @@ state_density_plot <- plot_usmap(values = values, color = "orange", labels=FALSE
 state_density_plot
 ```
 
+At chunk below, I've prepared scatter plot which aims to show the distribution and variation of bird observations over time for different bird species, allowing for comparisons and insights into the patterns and trends of bird sightings.
+
 ```{r}
-head (feederwatch)
+bird_data <- feederwatch %>% 
+  select(species_code,how_many,day1_am,day1_pm,day2_am,day2_pm,Date) %>% 
+  filter(species_code == 'lessca' | species_code == 'cedwax' | species_code == 'yerwar')
+
+bird_data$Date <- as.POSIXct(bird_data$Date)
+
+scatter_plot <- bird_data %>% 
+  ggplot(aes(x = Date, y = how_many, color = species_code)) +
+  geom_point() +
+  labs(x = "Datetime - month", y = "Number of bird's for one observation ") +
+  theme_minimal()
+
+scatter_plot
+
+feederwatch %>%
+    select(species_code) %>% 
+  table(useNA = "ifany") %>%
+  sort(decreasing = TRUE)
+
+bird_data %>%
+    select(species_code,how_many) %>% 
+  table(useNA = "ifany")
+
+median_for_species <- function(bird) {
+  data <- bird_data[bird_data$species_code == bird, ]
+  data$how_many <- as.numeric(data$how_many)
+  return (median(data$how_many, na.rm = TRUE))
+}
+
+(cedwax_median <- median_for_species("cedwax"))
+(yerwar_median <- median_for_species("yerwar"))
+(lessca_median <- median_for_species("lessca"))
+
+```
+I've chosen 3 "different" kind of bird -, `yerwar` (Yellow-rumped Warbler), `cedwax` (Cedar Waxwing
+), `lessca` (Lesser Scaup), for purpose to show 3 different distribution. Based on generated plot I've had the following conclusions:
+
+1. The counts for Yellow-rumped Warbler remain consistent throughout the observed periods. The outlier for this species, which is significantly different from other observations, is 20 but still relatively low compared to other species. Yellow-rumped Warbler are frequently observed - this is one of the most common species in dataset `feederwatch`.
+
+2. The counts for Cedar Waxwings vary across the observed periods. The highest count for this species is 250, observed during one of the days. Median for number of birds per observation from over 100 record is 8. This indicates that there is a wide range of counts for Cedar Waxwings, with some observations reaching as high as 250. However, the median count of 8 suggests that the majority of the counts fall below this maximum value. Number of record indicates that Cedar Waxwings are still relatively common and frequently seen in the recorded data.
+
+3. There is only one record for Lesser Scaup. Since there is only one observation, the median represents the count value itself. Thus, 500 individuals for the single record indicates that its typically live in herds and are considered rare. However, it's important to note that the behavior and population status of species can vary depending on various factors such as habitat, geographic location, and conservation status.
+
+
+
+I've decided to work with site data, where each row represents one observation and their associated site description. 
+
+The first step in building regression models is to split original data into a training and test set. I've performed then  all feature engineering and model fitting tasks on the training set and I've used the test set as an independent assessment of my model’s prediction accuracy.
+
+```{r}
+
 ```
 
