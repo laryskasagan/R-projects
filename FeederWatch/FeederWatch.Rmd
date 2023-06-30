@@ -849,7 +849,77 @@ R2_plot
 
 In the previous section, I've trained a linear regression model to the site data step-by-step. In this section, I've gone over how to combine all of the modeling steps into a single workflow.
 
+### Spliting the data
 
+```{r}
+set.seed(as.numeric(Sys.time()))
+
+site_data_split <- initial_split(site_data_df, prop = 0.75, strata = housing_density)
+
+site_data_training <- site_data_split %>%
+  training()
+
+site_data_test <- site_data_split %>%
+  testing()
+```
+
+### Feature Engineering
+
+Next, I've specified feature engineering recipe. This recipe will be automatically applied in a later steps.
+
+```{r}
+site_data_recipe <- recipe(
+  housing_density ~ .,
+  data = site_data_training) %>% 
+  step_YeoJohnson(all_numeric(), -all_outcomes()) %>% 
+  step_normalize(all_numeric(), -all_outcomes())
+
+site_data_recipe
+```
+
+### Specifing model
+
+At chunk below, I've specified linear regression model with parsnip.
+
+```{r}
+lm_model <- linear_reg() %>% 
+  set_engine('lm') %>% 
+  set_mode('regression')
+```
+
+### Creating and executing the workflow
+
+I've used `workflow` package which was designed to combine models and recipes into a single object. To obtain the performance metrics and predictions on the test set, I've used the `collect_metrics()` and `collect_predictions()` functions on site_data_fit object. I've saved the test set predictions by using the `collect_predictions()` function. 
+
+```{r}
+site_data_workflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(site_data_recipe)
+
+site_data_workflow
+
+site_data_fit <- site_data_workflow %>% 
+  last_fit(split = site_data_split)
+
+site_data_fit %>% 
+  collect_metrics()
+
+test_results <- site_data_fit %>% 
+  collect_predictions()
+
+test_results
+
+model_fitted <- site_data_workflow %>% 
+  fit(data = site_data_training)
+
+summary(model_fitted$fit$fit$fit)
+
+model_fitted %>% 
+  predict(new_data = site_data_test)
+```
+### Summary for linear regression
+
+When the majority of the variables in `site_data` dataset are binary and only one variable has a continuous value ranging, linear regression may not be the most suitable choice. Linear regression assumes a linear relationship between the predictor variables and the response variable. While it can handle binary variables, it may not capture the nonlinear relationships that could exist in data. It might be more appropriate to consider logistic regression rather than linear regression. Logistic regression is specifically designed for binary response variables.
 
 ## Decision Trees
 
