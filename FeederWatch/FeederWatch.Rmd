@@ -2,8 +2,10 @@
 title: "R Notebook - Bird FeederWatch dataset"
 ---
 
+### Configuration of environment
+
 ```{r}
-libs <- c("tidyverse","dplyr", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer","tidymodels", "vip","caret","rpart.plot")
+libs <- c("tidyverse","dplyr", "maps", "Amelia", "ggrepe", "usmap", "RColorBrewer","tidymodels", "vip","caret","rpart","rpart.plot", "ranger")
 
 installed_libs <- libs %in% rownames(installed.packages())
 
@@ -27,6 +29,8 @@ library(vip)
 library(caret)
 library(rpart)
 library(rpart.plot)
+library(ranger)
+
 ```
 
 The data comes from the Project FeederWatch.
@@ -36,7 +40,7 @@ feederwatch <- readr::read_csv('https://raw.githubusercontent.com/rfordatascienc
 site_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_count_site_data_public_2021.csv')
 ```
 
-## Quick peek on data
+# Quick peek on data
 
 ```{r}
 head(feederwatch)
@@ -47,7 +51,7 @@ str(feederwatch)
 glimpse(feederwatch)
 ```
 
-## Data preparation -\> feederwatch
+# Data preparation - feederwatch
 
 I dropped 5 columns that I decided weren't provided significant information. Then I explored how much missing data I have in that dataset. I genereted plot showing where missingness occurs in the dataset. I found that in that dataset I had only 1% of missing data NA - in 1 column which was snow_dep_atleast. I decided to replace NA value with calculated median value for each region.
 
@@ -72,11 +76,16 @@ feederwatch %>%
 (median_by_region <- feederwatch %>%
   group_by(subnational1_code) %>%
   summarize(median_value = median(snow_dep_atleast, na.rm = TRUE)))
+  
+(median_by_region_ef <- feederwatch %>%
+  group_by(subnational1_code) %>%
+  summarize(median_value_ef = median(effort_hrs_atleast, na.rm = TRUE)))
 
 feederwatch <- feederwatch %>% 
   mutate(snow_dep_atleast = ifelse(is.na(snow_dep_atleast) & subnational1_code %in% median_by_region$subnational1_code,median_by_region$median_value[match(subnational1_code, median_by_region$subnational1_code)],snow_dep_atleast)) %>% 
+  mutate(effort_hrs_atleast = ifelse(is.na(effort_hrs_atleast) & subnational1_code %in% median_by_region_ef$subnational1_code,median_by_region_ef$median_value_ef[match(subnational1_code, median_by_region_ef$subnational1_code)],effort_hrs_atleast)) %>% 
   mutate(Date = as.Date(paste(Year,Month,Day,sep = "-"))) %>% 
-  select(-Year,-Month,-Day)
+  select(-Year,-Month,-Day) 
 
 
 feederwatch %>% 
@@ -84,7 +93,7 @@ feederwatch %>%
   table(useNA = "ifany")
 ```
 
-At chunk below I've prepared data to generation plot. I've used `usmap` package in combination with `ggplot2` to generate the US map. On the generated plot, I've intended to show the depth of the snow cover depending on the state.
+At the chunk below I've prepared data to generation plot. I've used `usmap` package in combination with `ggplot2` to generate the US map. On the generated plot, I've intended to show the depth of the snow cover depending on the state.
 
 ```{r}
 (region_dataset_USA <- feederwatch %>% 
@@ -201,7 +210,7 @@ str(site_data)
 glimpse(site_data)
 ```
 
-## Data preparation - side_data
+# Data preparation - side_data
 
 For starters, I've decided to generete missing plot. In this dataset I've found 26% of missingness! Most of them are in columns describing numfeeders but there are missingness everywhere except loc_id. I divided this dataset into smaller with specific information. In dataset `animals_activity_data` there is only 8% of missingness. I've changed NA on 0 in animals activity set.
 
@@ -348,7 +357,7 @@ The interpretation of obtained result:
 
 4.  The proportion of records where humans are present (0.7287649) is relatively high, indicating that humans are frequently observed in the dataset. This suggest that humans are a common presence among the animals, potentially indicating their involvement in observation or it can have connection with habitat with high urbanization.
 
-At chunk below I've prepared data for plotting. I've intended to show how total of bird's population number changing through time in North America.
+At the chunk below I've prepared data for plotting. I've intended to show how total of bird's population number changing through time in North America.
 
 ```{r}
 species_counts <- feederwatch %>% 
@@ -372,7 +381,7 @@ species_counts <- species_counts %>%
 
 species_counts$Week <- as.Date(paste0(substr(species_counts$Week, 1, 4), "-W", substr(species_counts$Week, 6, 7), "-1"), format = "%Y-W%U-%u")
 
-species_labels <- c("daejun" = "Daejun magpie",
+species_labels <- c("daejun" = "Dark-eyed Junco",
                     "houspa" = "House Sparrow",
                     "moudov" = "Mourning Dove",
                     "amegfi" = "American Goldfinch",
@@ -623,7 +632,7 @@ state_density_plot <- plot_usmap(values = values, color = "orange", labels=FALSE
 state_density_plot
 ```
 
-At chunk below, I've prepared scatter plot which aims to show the distribution and variation of bird observations over time for different bird species, allowing for comparisons and insights into the patterns and trends of bird sightings.
+At the chunk below, I've prepared scatter plot which aims to show the distribution and variation of bird observations over time for different bird species, allowing for comparisons and insights into the patterns and trends of bird sightings.
 
 ```{r}
 bird_data <- feederwatch %>% 
@@ -671,23 +680,130 @@ I've chosen 3 "different" kind of bird - `yerwar` (Yellow-rumped Warbler), `cedw
 
 # Modeling
 
-## Random Forests
+I've worked with the `feederwatch` and `site_data` datasets in these modelings. A row in this datasets represents one observation. For `feederwatch` each observation has included i.e., species. For `site_data` each observation has included i.e., different habitat types.
 
-I've worked with the `feederwatch_df` dataframe in this modeling. A row in this data frame represents one observation. Each observation has included i.e., species.
+## Linear regression
 
 ### Preprocessing and preparation
 
-Before using Random Forest with the FeederWatch dataset, I've needed to preprocess and prepare the data. This involved:
+Before modeling, I've needed to preprocess and prepare the data. This involved:
 
-1.  Handling missing values, which I've done earlier in this notebook.
+1.  Handling missing values
 
 ```{r}
-feederwatch %>% 
-  missmap(
-    main = "FeederWatch - Missing Map",
-    col = c("red","black")
+site_data_df <- site_data %>% 
+select(hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_water_fresh,hab_water_salt,hab_residential,hab_industrial,hab_agricultural,hab_desert_scrub,hab_young_woods,hab_swamp,hab_marsh,nearby_feeders,squirrels,cats,dogs,humans) %>% 
+   mutate(hab_dcid_woods = replace_na(hab_dcid_woods, 0),
+          hab_evgr_woods = replace_na(hab_evgr_woods, 0),
+          hab_mixed_woods = replace_na(hab_mixed_woods, 0),
+          hab_orchard = replace_na(hab_orchard, 0),
+          hab_park = replace_na(hab_park, 0),
+          hab_water_fresh = replace_na(hab_water_fresh, 0),
+          hab_water_salt = replace_na(hab_water_salt, 0),
+          hab_residential = replace_na(hab_residential, 0),
+          hab_industrial = replace_na(hab_industrial, 0),
+          hab_agricultural = replace_na(hab_agricultural, 0),
+          hab_desert_scrub = replace_na(hab_desert_scrub, 0),
+          hab_young_woods = replace_na(hab_young_woods, 0),
+          hab_swamp = replace_na(hab_swamp, 0),
+          hab_marsh = replace_na(hab_marsh, 0),
+          nearby_feeders = replace_na(nearby_feeders, 0),
+          squirrels = replace_na(squirrels, 0),
+          cats = replace_na(cats, 0),
+          dogs = replace_na(dogs, 0),
+          humans = replace_na(humans, 0)) %>% 
+  as.data.frame(.)
+
+
+```
+
+2.  Splitting the data - I've divided dataset into a training set and a testing set. I've used the training set to train the linear regression model, while the testing set is used to evaluate its performance.
+
+```{r}
+# Set the random seed based on POSIX time
+set.seed(as.numeric(Sys.time()))
+
+site_data_split <- initial_split(site_data_df, prop = 0.75, strata = squirrels)
+
+site_data_training <- site_data_split %>%
+  training()
+
+site_data_test <- site_data_split %>%
+  testing()
+```
+
+I've used "squirrels" as response variable to predict whether a squirrels is considered present or absent.
+
+### Model Specification
+
+I've created a linear regression model object with the `lm` engine. This is the default engine for most applications.
+
+```{r}
+lm_model <- linear_reg() %>% 
+  set_engine('lm') %>% 
+  set_mode('regression')
+
+lm_model
+```
+### Fitting to Training Data
+
+I've been training model object on the `feederwatch_linear_regression_training ` data. I've used `fit()`.
+
+The code below trains linear regression model on the `feederwatch_linear_regression_training` data. As I've written before, I specified that speciesdaejun is the response variable and rest are predictor variables.
+
+```{r}
+lm_fit <- lm_model %>% 
+  fit(squirrels ~ ., data = site_data_training)
+
+lm_fit
+
+# Exploring Training Results
+summary(lm_fit$fit)
+
+plot(
+  lm_fit$fit,
+  pch = 16, 
+  col = '#FF8FA1' 
   )
 ```
+Based on the linear regression model. I've drawn the following conclusions:
+
+1. The coefficient estimates indicate the relationship between each predictor variable and the response variable (squirrels).
+
+2. The p-values associated with each coefficient estimate indicate the statistical significance of the relationship between the predictor variable and the response variable. Variables with p-values less than 0.05 (indicated by '*') are considered statistically significant. For example, hab_park has a p-value of 0.0145, suggesting a significant relationship with the presence of squirrels.
+
+4. The model's residual standard error is 0.4135, which represents the average difference between the observed values and the predicted values.
+
+5. The multiple R-squared value is 0.09199, indicating that approximately 9.2% of the variability in the response variable can be explained by the predictor variables in the model.
+
+6. The F-statistic is 1074, and the associated p-value is less than 2.2e-16, indicating that the overall model is statistically significant.
+
+Overall, the model suggests that the variables included have some relationship with the number of squirrels, although the overall explanatory power is relatively low (R-squared = 0.09199). Variables such as hab_dcid_woods, hab_mixed_woods, hab_residential, hab_agricultural, hab_desert_scrub, nearby_feeders, cats, and humans have significant associations with the presence of squirrels. However, it is important to note that the model does not imply causation, and further analysis or consideration of additional factors may be necessary.
+
+I've used the `plot()` function to obtain diagnostic plots for trained regression model. To obtain the detailed results from trained linear regression model in a data frame, I've used the `tidy()` and `glance()` functions directly on trained parsnip model, `lm_fit.`
+
+```{r}
+tidy(lm_fit)
+
+glance(lm_fit)
+
+vip(
+  lm_fit,
+  aesthetics = list(fill = "orchid2")
+  )
+```
+I've conclude from the results above, that hab_residential, humans amd hab_mixed_woods are 3 the most important predictors of site_data for squirrels. 2 the least important predictors of site_data for squirrels are hab_water_salt and hab_orchard.
+
+
+
+
+## Decision Trees
+
+### Preprocessing and preparation
+
+Before modeling, I've needed to preprocess and prepare the data. This involved:
+
+1.  Handling missing values.
 
 2.  Encoding categorical variables - feederwatch dataset has been included categorical features (e.g.,species_code), I've converted them into numerical representations, such as one-hot encoding using the `caret` package.
 
@@ -739,7 +855,7 @@ I've used "valid" as response variable to predict whether an observation is cons
 I've created folds for cross validation on the training data set
 
 ```{r}
-set.seed(123)
+set.seed(as.numeric(Sys.time()))
 
 feederwatch_forest_folds <- vfold_cv(feederwatch_forest_training, v = 5)
 ```
@@ -822,9 +938,10 @@ To view the results of hyperparameter tuning, I've used the `show_best()` functi
 tree_tuning %>%
   show_best('roc_auc')
 ```
-Based on the results, the combination of hyperparameters in grid that resulted in the highest mean ROC AUC score over 5 iterations is first one where cost_complexity is 1e-10, tree_depth is 15 and min_n is 2. This combination of hyperparameters achieved a mean ROC AUC score of 0.6079167.
 
-It's important to note that the other combinations of hyperparameters did not perform as well in terms of ROC AUC score. The combination with cost_complexity equal 1e-10, tree_depth equal 15, and min_n equal 40 had a lower mean ROC AUC score - 0.5363150, while the combinations with tree_depth equal 1 or cost_complexity equal 0.1 resulted in a mean ROC AUC score of 0.5, indicating no predictive power.
+Based on the results, the combination of hyperparameters in grid that resulted in the highest mean ROC AUC score over 5 iterations is first one where cost_complexity is 1e-10, tree_depth is 15 and min_n is 2. This combination of hyperparameters achieved a mean ROC AUC score of 0.6008428.
+
+It's important to note that the other combinations of hyperparameters did not perform as well in terms of ROC AUC score. The combination with cost_complexity equal 1e-10, tree_depth equal 15, and min_n equal 40 had a lower mean ROC AUC score - 0.5274334, while the combinations with tree_depth equal 1 or cost_complexity equal 0.1 resulted in a mean ROC AUC score of 0.5, indicating no predictive power.
 
 Therefore, based on the results, the first combination of hyperparameters is the most promising choice for fitting a decision tree model to this data.
 
@@ -839,7 +956,6 @@ best_tree
 
 I've been right and first model was the best.
 
-
 ### Finalize Workflow
 
 The final step in the hyperparameter tuning process involves utilizing the `finalize_workflow()` function to incorporate the optimal model into our workflow object.
@@ -849,8 +965,7 @@ final_tree_workflow <- tree_workflow %>%
   finalize_workflow(best_tree)
 ```
 
-
-## Visualize Results
+### Visualize Results
 
 I've fitted workflow to the training data. I've done it by passing workflow object to the `fit()` function. After training this model on the training data, I've proceeded to analyze variable importance using the `vip()` function. Next I've passed `tree_fit` to the `vip()` function which let to obtain ggplot object with the variable importance scores from model.
 
@@ -866,7 +981,8 @@ tree_fit <- tree_wf_fit %>%
 # Variable Importance
 vip(tree_fit, aesthetics = list(fill = "lightblue", size = 0.8))
 ```
-I've seen from the results above, that how_many with above 70% importance is the most important predictor of feederwatch. The plot suggest also that snow_dep_atleast and effort_hrs_atleast are one of the strongest predictors but their importance are about 20%. The least accurate predictor is day2_pm with less than 5%.
+
+I've conclude from the results above, that how_many with about 75% importance is the most important predictor of feederwatch. The plot suggest also that snow_dep_atleast is the second strongest predictor but its importance is about 20%. The least accurate predictor is speciesOther with less than 5%.
 
 ### Decision Tree Plot
 
@@ -892,12 +1008,12 @@ tree_last_fit <- final_tree_workflow %>%
 tree_last_fit %>%
   collect_metrics()
 ```
-From the obtained results, the accuracy of the model is estimated to be approximately 0.9926, while the roc_auc is estimated to be around 0.6107. This indicates that:
 
-1. The model was able to accurately predict the target variable (valid or not) for the observations in the evaluation dataset.
+From the obtained results, the accuracy of the model is estimated to be approximately 0.9930, while the roc_auc is estimated to be around 0.6074. This indicates that:
 
-2. The ROC AUC score indicates that the model's predictive power is slightly better than random guessing.
+1.  The model was able to accurately predict the target variable (valid or not) for the observations in the evaluation dataset.
 
+2.  The ROC AUC score indicates that the model's predictive power is slightly better than random guessing.
 
 ```{r}
 tree_predictions <- tree_last_fit %>%
@@ -909,12 +1025,72 @@ conf_mat(
   estimate = .pred_class
   )
 ```
-I've also decided to create confusion matrix. Based on that matrix, the model correctly predicted 7 instances as 0 so not valid and 24807 instances as 1 as valid. The model incorrectly predicted 23 instances as 1 when they were actually 0 and 163 instances as 0 when they were actually 1.
+
+I've also decided to create confusion matrix. Based on that matrix, the model correctly predicted 4 instances as 0 so not valid and 24821 instances as 1 as valid. The model incorrectly predicted 17 instances as 1 when they were actually 0 and 158 instances as 0 when they were actually 1.
 
 From these values, I've derived the following conclusions:
 
-  1. The accuracy is 0.99256. The model has a high accuracy rate, indicating that it correctly classifies a large portion of the data.
-  2. The precision is 0.9990737. The model has a high precision, meaning that when it predicts an instance as 1, it is usually correct.
-  3. The recall is 0.9934722. The model has a high recall, indicating that it is effective at capturing most of the actual positive instances.
+1.  The accuracy is 0.993. The model has a high accuracy rate, indicating that it correctly classifies a large portion of the data.
+2.  The precision is 0.9987519. The model has a high precision, meaning that when it predicts an instance as 1, it is usually correct.
+3.  The recall is 0.9931142. The model has a high recall, indicating that it is effective at capturing most of the actual positive instances.
 
+## Random Forests
 
+In this section, I've fitted a random forest model to the `feederwatch_df` data. Random forests take decision trees and construct more powerful models in terms of prediction accuracy. In this modelling, I've followed similiar steps to the modelling decision trees.
+
+### Preprocessing and preparation
+
+I've already split data into training, test, and cross validation sets as well as trained feature engineering recipe, feederwatch_recipe. I've been reused them in random forest workflow.
+
+### Model Specification
+
+Next, I've specified a random forest classifier with the following hyperparameters: - `mtry`: The number of predictors that will be randomly sampled at each split when creating the tree models - `trees`: The number of decision trees to fit and ultimately average - `min_n`: The minimum number of data points in a node that are required for the node to be split further
+
+I've used `rand_forest()` function to specify a random forest model with tidymodels. Hyperparameters can be adjusted but just like before parameters must be set to `tune()`. I've used the ranger engine.
+
+```{r}
+rf_model <- rand_forest(
+  mtry = tune(),
+  trees = tune(),
+  min_n = tune()
+  ) %>% 
+  set_engine('ranger', importance = "impurity") %>% 
+  set_mode('classification')
+```
+
+### Workflow
+
+```{r}
+rf_workflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(feederwatch_recipe)
+```
+
+### Hyperparameter Tuning
+
+In previous tuning, I've used `grid_regular()` to create a grid of hyperparameter values. In this case, I've used `grid_random()` function. In the next step, I've used the `tune_grid()` function to find the optimal combination of hyperparameters from tuning grid.
+
+```{r}
+set.seed(as.numeric(Sys.time()))
+
+rf_grid <- grid_random(
+  mtry() %>%
+    range_set(c(4, 11)),
+  trees(),
+  min_n(),
+  size = 10
+  )
+
+rf_grid
+
+rf_tuning <- rf_workflow %>% 
+  tune_grid(
+    resamples = feederwatch_forest_folds,
+    grid = rf_grid
+    )
+
+rf_tuning %>%
+  show_best('roc_auc')
+```
+
+At the chunk above, I've set the range from 4 to 11. This is because feederwatch_df has 15 columns and I' would like've wanted to test `mtry()` values somewhere in the middle between 1 and 15, trying to avoid values close to the ends.
