@@ -692,7 +692,7 @@ Before modeling, I've needed to preprocess and prepare the data. This involved:
 
 ```{r}
 site_data_df <- site_data %>% 
-select(hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_water_fresh,hab_water_salt,hab_residential,hab_industrial,hab_agricultural,hab_desert_scrub,hab_young_woods,hab_swamp,hab_marsh,nearby_feeders,squirrels,cats,dogs,humans) %>% 
+select(hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_water_fresh,hab_water_salt,hab_residential,hab_industrial,hab_agricultural,hab_desert_scrub,hab_young_woods,hab_swamp,hab_marsh,nearby_feeders,squirrels,cats,dogs,humans,housing_density) %>% 
    mutate(hab_dcid_woods = replace_na(hab_dcid_woods, 0),
           hab_evgr_woods = replace_na(hab_evgr_woods, 0),
           hab_mixed_woods = replace_na(hab_mixed_woods, 0),
@@ -711,10 +711,9 @@ select(hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_wa
           squirrels = replace_na(squirrels, 0),
           cats = replace_na(cats, 0),
           dogs = replace_na(dogs, 0),
-          humans = replace_na(humans, 0)) %>% 
+          humans = replace_na(humans, 0),
+          housing_density = replace_na(housing_density, 0)) %>% 
   as.data.frame(.)
-
-
 ```
 
 2.  Splitting the data - I've divided dataset into a training set and a testing set. I've used the training set to train the linear regression model, while the testing set is used to evaluate its performance.
@@ -723,7 +722,7 @@ select(hab_dcid_woods,hab_evgr_woods,hab_mixed_woods,hab_orchard,hab_park,hab_wa
 # Set the random seed based on POSIX time
 set.seed(as.numeric(Sys.time()))
 
-site_data_split <- initial_split(site_data_df, prop = 0.75, strata = squirrels)
+site_data_split <- initial_split(site_data_df, prop = 0.75, strata = housing_density)
 
 site_data_training <- site_data_split %>%
   training()
@@ -732,7 +731,7 @@ site_data_test <- site_data_split %>%
   testing()
 ```
 
-I've used "squirrels" as response variable to predict whether a squirrels is considered present or absent.
+I've used "housing_density" as response variable to predict density of housing.
 
 ### Model Specification
 
@@ -753,7 +752,7 @@ The code below trains linear regression model on the `feederwatch_linear_regress
 
 ```{r}
 lm_fit <- lm_model %>% 
-  fit(squirrels ~ ., data = site_data_training)
+  fit(housing_density ~ ., data = site_data_training)
 
 lm_fit
 
@@ -768,17 +767,17 @@ plot(
 ```
 Based on the linear regression model. I've drawn the following conclusions:
 
-1. The coefficient estimates indicate the relationship between each predictor variable and the response variable (squirrels).
+1. The coefficient estimates indicate the relationship between each predictor variable and the response variable.
 
-2. The p-values associated with each coefficient estimate indicate the statistical significance of the relationship between the predictor variable and the response variable. Variables with p-values less than 0.05 (indicated by '*') are considered statistically significant. For example, hab_park has a p-value of 0.0145, suggesting a significant relationship with the presence of squirrels.
+2. Based on obtained p-values several of the predictor variables are significant. Variables with p-values less than 0.05 (indicated by '*') are considered statistically significant. For example, dogs has a p-value of 0.0162, suggesting a significant relationship with the housing density.
 
-4. The model's residual standard error is 0.4135, which represents the average difference between the observed values and the predicted values.
+4. The model's residual standard error is 0.7903, which represents the average difference between the observed values and the predicted values.
 
-5. The multiple R-squared value is 0.09199, indicating that approximately 9.2% of the variability in the response variable can be explained by the predictor variables in the model.
+5. The model's multiple R-squared value is 0.4733, indicating that approximately 47.33% of the variance in housing density can be explained by the predictor variables in the model. The adjusted R-squared value is similar, suggesting that the model's goodness-of-fit remains consistent even when considering the number of predictors.
 
-6. The F-statistic is 1074, and the associated p-value is less than 2.2e-16, indicating that the overall model is statistically significant.
+6. The F-statistic has a large value of 9021, indicating that the overall model is statistically significant, and the probability of obtaining such a large F-statistic by chance is extremely low.
 
-Overall, the model suggests that the variables included have some relationship with the number of squirrels, although the overall explanatory power is relatively low (R-squared = 0.09199). Variables such as hab_dcid_woods, hab_mixed_woods, hab_residential, hab_agricultural, hab_desert_scrub, nearby_feeders, cats, and humans have significant associations with the presence of squirrels. However, it is important to note that the model does not imply causation, and further analysis or consideration of additional factors may be necessary.
+Overall, the model suggests that several predictor variables, including habitat types, nearby feeders, and the presence of certain animals (squirrels, cats, dogs, and humans), have significant effects on housing density. 
 
 I've used the `plot()` function to obtain diagnostic plots for trained regression model. To obtain the detailed results from trained linear regression model in a data frame, I've used the `tidy()` and `glance()` functions directly on trained parsnip model, `lm_fit.`
 
@@ -792,8 +791,63 @@ vip(
   aesthetics = list(fill = "orchid2")
   )
 ```
-I've conclude from the results above, that hab_residential, humans amd hab_mixed_woods are 3 the most important predictors of site_data for squirrels. 2 the least important predictors of site_data for squirrels are hab_water_salt and hab_orchard.
+I've conclude from the results above, that hab_residential, hab_park and hab_agricultural are 3 the most important predictors of site_data for housing density. 2 the least important predictors of site_data for squirrels are hab_swamp and hab_young_woods.
 
+The code below uses the `predict` function to generate a data frame with a single column, `.pred`, which contains the predicted presence squirrels on the `site_datatest` data.
+
+```{r}
+lm_fit %>% 
+  predict(new_data = site_data_test)
+
+site_data_test_results <- lm_fit %>% 
+  predict(new_data = site_data_test) %>% 
+  bind_cols(site_data_test)
+
+site_data_test_results
+```
+To obtain the RMSE and R2 values on test set results, I've used the `rmse()` and `rsq()` functions.
+
+```{r}
+#RMSE
+site_data_test_results %>% 
+  rmse(
+    truth = housing_density,
+    estimate = .pred
+    )
+
+#R2
+site_data_test_results %>% 
+  rsq(
+    truth = housing_density,
+    estimate = .pred
+    )
+```
+Based on these results, I've concluded the following:
+
+1. The relatively low RMSE value suggests that the model's predictions have a moderate level of accuracy in estimating the actual housing density. However, the interpretation of the RMSE value depends on the scale and context of the variable being predicted.
+
+2.The R-squared value of 0.4707583 indicates that the model explains approximately 47.08% of the variability observed in the housing density. This means that other factors not included in the model may also influence the housing density. 
+
+### R2 Plot
+
+The best way to assess the test set accuracy is by making an R2 plot. This is a plot that can be used for any regression model.
+
+```{r}
+R2_plot <- site_data_test_results %>% 
+  ggplot(aes(x = .pred, y = housing_density)) +
+    geom_point(color = 'darkred', size = 0.1) +
+    geom_abline(intercept = 0, slope = 1, color = 'orange') +
+    labs(
+      title = 'Linear Regression Results - Site Data Test Set',
+      x = 'Predicted housing_density',
+      y = 'Actual housing_density'
+      )
+
+R2_plot 
+```
+## Creating a Machine Learning Workflow based on linear regression model
+
+In the previous section, I've trained a linear regression model to the site data step-by-step. In this section, I've gone over how to combine all of the modeling steps into a single workflow.
 
 
 
