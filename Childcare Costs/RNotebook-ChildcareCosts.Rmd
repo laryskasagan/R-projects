@@ -1,0 +1,238 @@
+---
+title: "R Notebook - Childcare Costs"
+output: html_notebook
+---
+
+# Environment configuration
+
+```{r}
+libs <- c("tidytuesdayR","tidyverse","dplyr","scales")
+
+installed_libs <- libs %in% rownames(installed.packages())
+
+if(any(installed_libs == F)) {
+  install.packages(libs[!installed_libs])
+} else{
+  print("All the libraries already installed")
+}
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(tidytuesdayR)
+library(scales)
+```
+
+# Introduction
+
+The data comes from the National Database of Childcare Prices.
+
+***The National Database of Childcare Prices (NDCP) is the most comprehensive federal source of childcare prices at the county level. The database offers childcare price data by childcare provider type, age of children, and county characteristics. Data are available from 2008 to 2018.***
+
+The NDCP is a data repository that provides extensive information on childcare costs across different counties in the United States. It is the most comprehensive federal resource available for childcare price data. The NDCP includes data on various types of childcare providers and covers children's ages ranging from 0 to 12 years old. Moreover, the prices presented in the database reflect the latest available data from 2018, and they have been adjusted to account for inflation, representing the costs in real 2022 dollars.
+
+# Reading in the data:
+
+```{r}
+# Load with tidytuesdayR package
+# Also year/week works!
+tuesdata <- tt_load('2023-05-09')
+
+childcare_costs <- tuesdata$childcare_costs
+counties <- tuesdata$counties
+
+#Or read in the data manually
+childcare_costs <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/childcare_costs.csv')
+counties <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/counties.csv')
+```
+# Exploratory Data Analysis
+
+EDA focuses on understanding and interpreting the data at hand before delving into deeper analysis or manipulation. It should involve studying the data's patterns, trends, and characteristics to gain valuable insights before proceeding with more complex tasks.
+
+So firstly, I've gone through the data, cleaned it up and tried to understand it. 
+
+```{r}
+head(childcare_costs)
+```
+
+```{r}
+glimpse(childcare_costs)
+```
+
+At the beginning, it's worth noting that we're dealing with rectangular dataset - a lot variables, which are possible predictors to use.
+
+I've explored how childcare costs as measured by mcsa and mfccsa changed over years. To visualize these changes, I've created a boxplots. 
+
+```{r}
+childcare_costs %>% 
+  ggplot(aes(study_year,mcsa, group = study_year, fill = study_year)) + 
+  geom_boxplot(show.legend = FALSE) +
+  scale_fill_distiller(palette = 1) +
+  labs(title = "How have median price charged for Center-Based Care for those who are school age changed across years",
+       x = "year"
+  ) +
+  scale_x_continuous(breaks = unique(childcare_costs$study_year))
+```
+```{r}
+childcare_costs %>% 
+  ggplot(aes(study_year,mfccsa, group = study_year, fill = study_year)) + 
+  geom_boxplot(show.legend = FALSE) +
+  scale_fill_distiller(palette = 2) +
+  labs(title = "How have median price charged for Family Childcare for those who are school age changed across years",
+       x = "year"
+  ) +
+  scale_x_continuous(breaks = unique(childcare_costs$study_year))
+```
+
+By comparing these boxplots, it's clear that childcare costs have increased over the years in both cases. 
+
+Then, I've decided to compare these childcare costs and found out how values of msca and mfccsa and their increasing over years might differ from each other. I
+
+```{r}
+data_mcsa <- childcare_costs %>% 
+  select(study_year,mcsa) 
+```
+
+```{r}
+data_mfccsa <- childcare_costs %>% 
+  select(study_year,mfccsa)
+```
+
+```{r}
+combined_data <- bind_rows(data_mcsa,data_mfccsa, .id = "source_column") %>% 
+  mutate(median = case_when(
+    source_column == "1" ~ mcsa,
+    source_column == "2" ~ mfccsa
+  ), type = ifelse(source_column == "1","mcsa","mfccsa")) %>% 
+  select(-mcsa,-mfccsa)
+```
+
+```{r}
+combined_data %>%
+  ggplot(aes(x = study_year, y = median, group = study_year)) +
+  geom_boxplot() +
+  labs(title = "Median Childcare Costs across years",
+       x = "Year",
+       y = "Median Childcare Costs") +
+  scale_x_continuous(breaks = unique(combined_data$study_year)) +
+  facet_wrap(vars(type), nrow = 3)
+```
+
+Based on generated boxplots I've had the following conclusions:
+
+  1. For both mfccsa and mcsa, there are outliers above the maximum value in every year. These outliers indicate that there are some observations with exceptionally high values for both variables in each year. 
+  
+  2. For mfccsa, there are no outliers below the minimum value. This suggest that the lowest values in each year fall within the typical range. While for mcsa, there are two outliers below minimum, for year 2015 and 2017. 
+  
+  3. The interquartile range (IQR) is larger for mcsa compared to mfccsa. This suggests that there is more variability in the childcare costs measured by mcsa. This implies that there may be larger differences in the distribution for mcsa values within each year compared to mfccsa values. In contrast, the smaller IQR for "mfccsa" indicates that the childcare costs measured by this metric have less variability and a more consistent range across the years.
+  
+  4. The boxplots for both mcsa and mfccsa metrics exhibit positive skewness, it indicates that the distributions of childcare costs are skewed towards higher values - larger proportion of the data has higher values. This possitive skewness suggests that there are higher childcare costs for both mcsa and mfccsa, with notable proportion of observations having values towards the upper end of the distribution.
+  
+It's worth noting that the presence of outliers, particularly extreme values, can significantly affect the skewness of a distribution. As described above, there are the outliers in the dataset and these extreme high values could have impact on elongation of right tail, what was leading to an increase in positive skewness.
+
+Then, I've decided to check how childcare costs as measured by mcsa looked for infants, toddlers and preschoolers across years and compared them with results for school age children. I've been wondering if there are some differences between these group of children.
+  
+```{r}
+data_mcsa_infants <- childcare_costs %>% 
+  select(study_year,mc_infant) 
+```
+
+```{r}
+data_mcsa_toddlers <- childcare_costs %>% 
+  select(study_year,mc_toddler)
+```
+
+```{r}
+data_mcsa_preschools <- childcare_costs %>% 
+  select(study_year,mc_preschool)
+```
+
+```{r}
+combined_data_for_every_age_group <- bind_rows(data_mcsa_infants,data_mcsa_toddlers,data_mcsa_preschools,data_mcsa, .id = "source_column") %>% 
+  mutate(median = case_when(
+    source_column == "1" ~ mc_infant,
+    source_column == "2" ~ mc_toddler,
+    source_column == "3" ~ mc_preschool,
+    source_column == "4" ~ mcsa
+  ), type = case_when(
+    source_column == "1" ~ "infant",
+    source_column == "2" ~ "toddler",
+    source_column == "3" ~ "preschool",
+    source_column == "4" ~ "school"
+  )) %>% 
+  select(-3:-6) %>% 
+  mutate(type = factor(type, levels = c("infant", "toddler", "preschool", "school")))
+```
+
+```{r}
+combined_data_for_every_age_group %>% 
+  ggplot(aes(x = study_year, y = median, group = study_year)) +
+  geom_boxplot() +
+  labs(title = "Median Childcare Costs - price charged for Center-based Care across year",
+       x = "Year",
+       y = "Median Childcare Costs - mcsa") +
+  scale_x_continuous(breaks = unique(combined_data$study_year)[c(TRUE, FALSE)]) +
+  scale_y_continuous(breaks = pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(size = 6)) +
+  facet_wrap(vars(type), nrow = 1)
+```
+Based on the plot above, it's clear that median of childcare costs depends on age of child. For infants, childcare costs are higher compared to other age group. Also, the outliers are higher for this age group. <---- more????
+
+
+
+```{r}
+childcare_costs %>% 
+  ggplot(aes(mhi_2018,mcsa, color = flfpr_20to64)) +
+  geom_point(alpha = 0.5) +
+  scale_colour_gradientn(colours = viridis_pal(option = "A")(6)) +
+  scale_x_log10() +
+  labs(title = "The Interplay Between Childcare Costs, Median Household Income,\nand Women's Labor Force Participation",
+       x = "Median household income - mhi_2018",
+       y = "Median Childcare Costs - mcsa",
+       color = "labor force\nparticipation for\nwomen"
+  )
+```
+As we can see above, for counties with higher household income women's labor force participation is higher. Also, childcare costs are higher for high median household income counties. It does seem to be with lower income county women deciding to stay home and taking care of children instead of returning on labor market. At scatter plot below, I've decided to check this thesis. 
+
+```{r}
+childcare_costs %>% 
+  ggplot(aes(mhi_2018,mcsa, color = funr_20to64)) +
+  geom_point(alpha = 0.5) +
+  scale_colour_gradientn(colours = viridis_pal(option = "F")(10)) +
+  scale_x_log10() +
+  labs(title = "The Interplay Between Childcare Costs, Median Household Income,\nand Women's Unemployment Rate",
+       x = "Median household income - mhi_2018",
+       y = "Median Childcare Costs - mcsa",
+       color = "Unemployment of\nthe female population\naged 20 to 64 years old."
+  )
+```
+As we could expect, in counties with lower income household unemployment rate for women at working age is higher than for counties with higher median household income. In counties with high median householde income unemployment rate is close to 0, when for Lower-income counties the rate is much higher, up to over 40. Here could be a few possible explanations:
+
+1. Limited Job Opportunities - This scarcity of employment options can make it more challenging for women to find suitable job that is compatible with caring for children, leading to higher unemployment rates.
+
+2. Lack of possibility for raising the qualifications - Lower-income counties may face educational and skill gaps among their population. Women in these areas might have limited access to quality education and training programs, which can hinder their employability and increase their unemployment rates.
+
+3....
+
+```{r}
+childcare_costs %>%  select(county_fips_code,study_year,unr_20to64,funr_20to64,munr_20to64) %>% filter(study_year == 2018)
+
+childcare_costs_with_states <- childcare_costs %>% 
+  left_join(counties, by = "county_fips_code") %>% 
+  mutate(subregion = tolower(gsub(" County", "", county_name)))
+
+glimpse(s)
+
+county_map <- map_data("county")
+merged_data <- merge(county_map, childcare_costs_with_states, by = "subregion")
+
+ggplot(merged_data) +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = female_unemployment_rate)) +
+  labs(title = "Female Unemployment Rate in USA Counties",
+       fill = "Female Unemployment Rate") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal()
+
+```
+
